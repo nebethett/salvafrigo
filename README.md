@@ -1,11 +1,20 @@
 # salvafrigo
 App per creazione ricette salvafrigo e antispreco
 
-# RUN STREAMLIT
-ollama serve
+# RUN E CONFIGURATION
+python -m pip install ollama *tramite power shell*
+python -m venv venv *per ambiente virtuale*
+
+Per attivare ambiente:
+venv\Scripts\Activate
+
+python -m pip install -r requirements.txt *per installare tutto il necessario*
+python -m ollama run phi3
 python -m fastapi dev backend/main.py
 python -m streamlit run frontend/app.py
-pip install -r requirements.txt *per installare tutto il necessario*
+
+Per disattivare ambiente:
+deactivate
 
 # REGOLE BASE
 - Scrivi un prompt più preciso che puoi e cosa ti aspetti realmente in output
