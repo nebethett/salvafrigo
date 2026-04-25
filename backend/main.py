@@ -1,8 +1,20 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.middleware.cors import CORSMiddleware
+
+from backend.auth import authenticate_user, create_access_token, get_current_user
 from pydantic import BaseModel, Field
 import requests
 
 app = FastAPI(title="Salvafrigo API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:4200"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
 MODEL_NAME = "phi3"  # oppure llama3, phi3, ecc.
@@ -15,6 +27,31 @@ class RicettaRequest(BaseModel):
 
 class RicettaResponse(BaseModel):
     risposta: str
+
+
+@app.post("/auth/login")
+def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    user = authenticate_user(form_data.username, form_data.password)
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Username o password non validi",
+        )
+
+    token = create_access_token({"sub": user["username"]})
+
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+    }
+
+
+@app.get("/me")
+def me(current_user: dict = Depends(get_current_user)):
+    return {
+        "username": current_user["username"]
+    }
 
 
 def chiama_ollama(prompt: str) -> str:

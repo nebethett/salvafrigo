@@ -13,6 +13,9 @@ python -m ollama run phi3
 python -m fastapi dev backend/main.py
 python -m streamlit run frontend/app.py
 
+Per avviare backend:
+uvicorn backend.main:app --reload
+
 Per disattivare ambiente:
 deactivate
 
