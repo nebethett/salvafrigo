@@ -4,6 +4,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.auth import authenticate_user, create_access_token, get_current_user
 from pydantic import BaseModel, Field
+from repository.ingredienti_repository import (
+    get_categorie_con_ingredienti_db
+)
 import requests
 
 app = FastAPI(title="Salvafrigo API")
@@ -27,6 +30,25 @@ class RicettaRequest(BaseModel):
 
 class RicettaResponse(BaseModel):
     risposta: str
+
+class Ingrediente(BaseModel):
+    id: int
+    nome: str = Field(..., min_length=1)
+    quantita: int
+
+
+class IngredientiResponse(BaseModel):
+    ingredienti: list[Ingrediente]
+
+
+class CategoriaConIngredienti(BaseModel):
+    id: int
+    nome: str = Field(..., min_length=1)
+    ingredienti: list[Ingrediente]
+
+
+class CategorieConIngredientiResponse(BaseModel):
+    categorie: list[CategoriaConIngredienti]
 
 
 @app.post("/auth/login")
@@ -109,3 +131,45 @@ Pasta al forno povera,2###Frittata di zucchine,1###Pollo al limone,3
 """
     risposta = chiama_ollama(prompt)
     return RicettaResponse(risposta=risposta)
+
+
+@app.post("/getCategorieConIngredienti", response_model=CategorieConIngredientiResponse)
+def get_categorie_con_ingredienti():
+    rows = get_categorie_con_ingredienti_db()
+
+    categorie_dict = {}
+
+    for row in rows:
+        categoria_id = row["categoria_id"]
+
+        if categoria_id not in categorie_dict:
+            categorie_dict[categoria_id] = {
+                "id": row["categoria_id"],
+                "nome": row["categoria_nome"],
+                "ingredienti": []
+            }
+
+        if row["ingrediente_id"] is not None:
+            categorie_dict[categoria_id]["ingredienti"].append({
+                "id": row["ingrediente_id"],
+                "nome": row["ingrediente_nome"],
+                "quantita": row["quantita_grammi"]
+            })
+
+    return CategorieConIngredientiResponse(
+        categorie=[
+            CategoriaConIngredienti(
+                id=categoria["id"],
+                nome=categoria["nome"],
+                ingredienti=[
+                    Ingrediente(
+                        id=ingrediente["id"],
+                        nome=ingrediente["nome"],
+                        quantita=ingrediente["quantita"]
+                    )
+                    for ingrediente in categoria["ingredienti"]
+                ]
+            )
+            for categoria in categorie_dict.values()
+        ]
+    )

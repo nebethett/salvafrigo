@@ -12,6 +12,7 @@ python -m pip install -r requirements.txt *per installare tutto il necessario*
 python -m ollama run phi3
 python -m fastapi dev backend/main.py
 python -m streamlit run frontend/app.py
+python -m database.init_db
 
 Per avviare backend:
 uvicorn backend.main:app --reload
