@@ -4,10 +4,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.auth import authenticate_user, create_access_token, get_current_user
 from pydantic import BaseModel, Field
+from typing import List, Literal
 from repository.ingredienti_repository import (
     get_categorie_con_ingredienti_db
 )
 import requests
+import json
 
 app = FastAPI(title="Salvafrigo API")
 
@@ -24,26 +26,56 @@ MODEL_NAME = "phi3"  # oppure llama3, phi3, ecc.
 
 
 class RicettaRequest(BaseModel):
-    ingredienti: str = Field(..., min_length=1)
-    tipo: str = Field(..., min_length=1)
+    ingredienti: str
+    tipo: str
 
+class RicettaPreview(BaseModel):
+    id: int
+    titolo: str
+    sottotitolo: str
+    prep_minuti: int
+    cottura_minuti: int
+    porzioni: int
+    difficolta: Literal["Facile", "Media", "Difficile"]
 
 class RicettaResponse(BaseModel):
-    risposta: str
+    ricette: List[RicettaPreview]
+
+class RicettaDettaglioRequest(BaseModel):
+    titolo: str
+    ingredienti: str
+    tipo: str
+
+class IngredienteRicetta(BaseModel):
+    nome: str
+    quantita: str
+
+class RicettaDettaglioResponse(BaseModel):
+    titolo: str
+    sottotitolo: str
+    prep_minuti: int
+    cottura_minuti: int
+    porzioni: int
+    difficolta: Literal["Facile", "Media", "Difficile"]
+    ingredienti: list[IngredienteRicetta]
+    procedimento: list[str]
+    consiglio_chef: str
 
 class Ingrediente(BaseModel):
     id: int
-    nome: str = Field(..., min_length=1)
+    nome: str
     quantita: int
 
 
 class IngredientiResponse(BaseModel):
     ingredienti: list[Ingrediente]
 
+class CategoriaConIngredientiRequest(BaseModel):
+    nome_ingrediente: str
 
 class CategoriaConIngredienti(BaseModel):
     id: int
-    nome: str = Field(..., min_length=1)
+    nome: str
     ingredienti: list[Ingrediente]
 
 
@@ -84,6 +116,7 @@ def chiama_ollama(prompt: str) -> str:
                 "model": MODEL_NAME,
                 "prompt": prompt,
                 "stream": False,
+                "format": "json"
             },
             timeout=120,
         )
@@ -107,35 +140,116 @@ def genera_ricette(payload: RicettaRequest):
 Genera ESATTAMENTE 3 ricette antispreco usando SOLO questi ingredienti:
 {payload.ingredienti}
 
-Vincoli:
-- semplice
-- economica
-- pronta in meno di 30 minuti
-- da preparare con questo strumento: {payload.tipo}
+Strumento di cottura: {payload.tipo}
 
-Rispondi SOLO nel seguente formato, senza aggiungere altro:
-Titolo ricetta,1###Titolo ricetta,2###Titolo ricetta,3
+Rispondi SOLO con un oggetto JSON valido.
+Non usare markdown.
+Non usare ```json.
+Non aggiungere commenti.
+Non aggiungere testo fuori dal JSON.
 
-Regole obbligatorie:
-- scrivi ESATTAMENTE 3 ricette
-- scrivi SOLO il titolo della ricetta
-- NON scrivere descrizioni
-- NON scrivere ingredienti
-- NON scrivere preparazione
-- dopo ogni titolo metti una virgola e un numero da 1 a 3 che rappresenta la difficoltà
-- separa le 3 ricette solo con ###
-- non andare a capo
+Schema obbligatorio:
+{{
+  "ricette": [
+    {{
+      "id": 1,
+      "titolo": "Nome ricetta",
+      "sottotitolo": "Breve descrizione massimo 120 caratteri",
+      "prep_minuti": 10,
+      "cottura_minuti": 15,
+      "porzioni": 2,
+      "difficolta": "Facile"
+    }}
+  ]
+}}
 
-Esempio di formato corretto:
-Pasta al forno povera,2###Frittata di zucchine,1###Pollo al limone,3
+Regole:
+- esattamente 3 ricette
+- id deve essere 1, 2, 3
+- prep_minuti deve essere SOLO un numero intero
+- cottura_minuti deve essere SOLO un numero intero
+- porzioni deve essere SOLO un numero intero
+- difficolta solo: Facile, Media, Difficile
+- prep_minuti + cottura_minuti massimo 30
+- usa solo ingredienti indicati
 """
     risposta = chiama_ollama(prompt)
-    return RicettaResponse(risposta=risposta)
+    try:
+        data = json.loads(risposta)
+        return RicettaResponse(**data)
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ollama non ha restituito JSON valido: {risposta}"
+        )
+
+@app.post("/ricette/dettaglio", response_model=RicettaDettaglioResponse)
+def genera_dettaglio_ricetta(payload: RicettaDettaglioRequest):
+    prompt = f"""
+Sei un generatore di JSON. Non devi mai usare markdown.
+
+Crea il dettaglio completo della ricetta:
+{payload.titolo}
+
+Ingredienti disponibili:
+{payload.ingredienti}
+
+Strumento:
+{payload.tipo}
+
+Devi rispondere SOLO con un JSON valido.
+NON scrivere ```json
+NON scrivere testo prima o dopo
+NON spiegare nulla
+
+Formato obbligatorio:
+{{
+  "titolo": "string",
+  "sottotitolo": "string",
+  "prep_minuti": number,
+  "cottura_minuti": number,
+  "porzioni": number,
+  "difficolta": "Facile | Media | Difficile",
+  "ingredienti": [
+    {{
+      "nome": "string",
+      "quantita": "string"
+    }}
+  ],
+  "procedimento": [
+    "string"
+  ],
+  "consiglio_chef": "string"
+}}
+
+Regole IMPORTANTI:
+- usa SOLO gli ingredienti forniti
+- prep_minuti deve essere SOLO un numero intero
+- cottura_minuti deve essere SOLO un numero intero
+- porzioni deve essere SOLO un numero intero
+- massimo 7 step nel procedimento
+- ogni step deve essere breve (1 frase)
+- difficolta solo: Facile, Media, Difficile
+- NON usare backtick
+- NON usare markdown
+- NON aggiungere testo fuori dal JSON
+
+Rispondi ORA.
+"""
+    risposta = chiama_ollama(prompt)
+    try:
+        data = json.loads(risposta)
+        return RicettaDettaglioResponse(**data)
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ollama non ha restituito JSON valido: {risposta}"
+        )
 
 
 @app.post("/getCategorieConIngredienti", response_model=CategorieConIngredientiResponse)
-def get_categorie_con_ingredienti():
-    rows = get_categorie_con_ingredienti_db()
+def get_categorie_con_ingredienti(input : CategoriaConIngredientiRequest):
+    rows = get_categorie_con_ingredienti_db(input.nome_ingrediente)
 
     categorie_dict = {}
 

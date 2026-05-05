@@ -21,7 +21,7 @@ def cerca_ingredienti(nome):
     return risultati
 
 
-def get_categorie_con_ingredienti_db():
+def get_categorie_con_ingredienti_db(nome_ingrediente):
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -35,8 +35,9 @@ def get_categorie_con_ingredienti_db():
         FROM categorie c
         LEFT JOIN ingredienti i ON i.categoria_id = c.id
         LEFT JOIN dispensa d ON d.ingrediente_id = i.id
+        WHERE LOWER(i.nome) LIKE LOWER (?)
         ORDER BY c.nome, i.nome
-    """)
+    """, (f"{nome_ingrediente}%",))
 
     rows = cursor.fetchall()
     conn.close()
